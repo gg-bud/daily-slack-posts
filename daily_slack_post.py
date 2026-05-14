@@ -326,9 +326,19 @@ def main():
 
         print("Posting Quote of the Day to Slack...")
         quote_blocks = build_quote_blocks(qotd)
-        post_slack_message(
+        quote_ts = post_slack_message(
             token, channel, quote_blocks,
             text=f"Quote of the Day: {qotd['quote']}",
+            unfurl=False,
+        )
+
+        # Post "Discuss." as a thread reply
+        print("Posting discussion prompt in thread...")
+        post_slack_message(
+            token, channel,
+            blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": "Discuss."}}],
+            text="Discuss.",
+            thread_ts=quote_ts,
             unfurl=False,
         )
 

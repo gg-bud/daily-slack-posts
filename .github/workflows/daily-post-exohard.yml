@@ -1,0 +1,27 @@
+name: Daily Slack Post (Exohard)
+
+on:
+  schedule:
+    # 9:00 AM Eastern = 13:00 UTC
+    - cron: "0 13 * * *"
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run daily post
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.EXOHARD_SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.EXOHARD_SLACK_CHANNEL_ID }}
+          NASA_API_KEY: ${{ secrets.NASA_API_KEY }}
+        run: python daily_slack_post.py

@@ -1,0 +1,35 @@
+Spec Statement: NASA & Wikiquote Daily Slack Integrator
+Objective:
+Create a Python script that fetches the NASA Astronomy Picture of the Day (APOD) and the Wikiquote "Quote of the Day," then posts them as a formatted message to a Slack channel via an Incoming Webhook.
+
+1. Data Sources:
+
+NASA APOD: Use [https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY](https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY).
+
+Requirement: Extract url, title, and media_type.
+
+Wikiquote: Use the MediaWiki Action API to fetch the "Main Page" section 0.
+
+Requirement: Parse the HTML to extract the quote text and the author. (Use BeautifulSoup or re).
+
+2. Core Logic & Edge Cases:
+
+Media Handling: If NASA's media_type is video, the script should post the video URL as text. If it is image, it should use Slack's "image block."
+
+Formatting: Use Slack Block Kit (JSON) for the payload.
+
+Header: "NASA Astronomy Picture of the Day"
+
+Image: The NASA photo.
+
+Section: The NASA title + the Wikiquote (formatted with > for the quote block).
+
+Environment Variables: Do not hardcode the Slack Webhook URL or NASA API Key. Use os.environ to retrieve SLACK_WEBHOOK_URL and NASA_API_KEY.
+
+3. Execution Environment:
+
+The script should be a single .py file.
+
+Include a requirements.txt file with requests and beautifulsoup4.
+
+The script should be structured so it can be easily triggered by a Cron job or GitHub Action.

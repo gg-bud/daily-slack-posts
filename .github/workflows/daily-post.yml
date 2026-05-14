@@ -2,8 +2,8 @@ name: Daily Slack Post
 
 on:
   schedule:
-    # 9:00 AM Eastern = 13:00 UTC (EST) or 14:00 UTC (EDT)
-    # Using 13:00 UTC to cover standard time; adjust to 14:00 for daylight saving
+    # Default: 9:00 AM Eastern (13:00 UTC)
+    # To change the schedule, update config.yaml and run the "Update Schedule" workflow.
     - cron: "0 13 * * *"
   workflow_dispatch: # Allow manual trigger
 

@@ -1,0 +1,19 @@
+# Daily Slack Post Configuration
+# Edit these values to customize your deployment.
+
+# Slack channel to post to (use channel ID, e.g. C0123456789)
+# Find it by right-clicking a channel > View channel details > copy ID at bottom
+# If not set here, falls back to SLACK_CHANNEL_ID environment variable / secret.
+channel_id: ""
+
+# Schedule: hour and minute in 24h format, and timezone
+# Timezone must be a valid IANA timezone (e.g. America/New_York, Europe/London, Asia/Tokyo)
+schedule:
+  hour: 9
+  minute: 0
+  timezone: "America/New_York"
+
+# Which posts to include (set to false to disable)
+posts:
+  nasa_apod: true
+  wikiquote_qotd: true

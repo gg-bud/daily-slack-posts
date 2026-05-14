@@ -5,17 +5,23 @@ Fetches the NASA Astronomy Picture of the Day and the Wikiquote
 Quote of the Day, then posts them as two separate messages to a
 Slack channel. The APOD description is posted as a thread reply.
 
+Configuration is loaded from config.yaml in the project root.
+
 Required environment variables:
     SLACK_BOT_TOKEN   - Slack Bot User OAuth Token (xoxb-...)
-    SLACK_CHANNEL_ID  - Slack channel ID to post to
     NASA_API_KEY      - NASA API key (use DEMO_KEY for testing)
+
+Optional environment variables (override config.yaml):
+    SLACK_CHANNEL_ID  - Slack channel ID to post to
 """
 
 import os
 import sys
 import json
 from datetime import date, datetime
+from pathlib import Path
 
+import yaml
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
@@ -23,6 +29,36 @@ from dotenv import load_dotenv
 load_dotenv()
 
 WIKIQUOTE_UA = "DailySlackBot/1.0 (https://github.com/example; bot@example.com)"
+CONFIG_PATH = Path(__file__).parent / "config.yaml"
+
+
+def load_config() -> dict:
+    """Load configuration from config.yaml with defaults."""
+    defaults = {
+        "channel_id": "",
+        "schedule": {
+            "hour": 9,
+            "minute": 0,
+            "timezone": "America/New_York",
+        },
+        "posts": {
+            "nasa_apod": True,
+            "wikiquote_qotd": True,
+        },
+    }
+
+    if CONFIG_PATH.exists():
+        with open(CONFIG_PATH, "r") as f:
+            file_config = yaml.safe_load(f) or {}
+        # Merge: file values override defaults
+        for key in defaults:
+            if key in file_config:
+                if isinstance(defaults[key], dict) and isinstance(file_config[key], dict):
+                    defaults[key].update(file_config[key])
+                else:
+                    defaults[key] = file_config[key]
+
+    return defaults
 
 
 def get_nasa_apod(api_key: str) -> dict:
@@ -237,58 +273,64 @@ def build_thread_blocks(apod: dict) -> list:
 
 
 def main():
-    # Read environment variables
+    # Load config
+    config = load_config()
+
+    # Read environment variables (env vars override config)
     token = os.environ.get("SLACK_BOT_TOKEN")
-    channel = os.environ.get("SLACK_CHANNEL_ID")
+    channel = os.environ.get("SLACK_CHANNEL_ID") or config["channel_id"]
     api_key = os.environ.get("NASA_API_KEY", "DEMO_KEY")
 
     if not token:
         print("Error: SLACK_BOT_TOKEN environment variable is not set.")
         sys.exit(1)
     if not channel:
-        print("Error: SLACK_CHANNEL_ID environment variable is not set.")
+        print("Error: No channel ID set. Set SLACK_CHANNEL_ID env var or channel_id in config.yaml.")
         sys.exit(1)
 
-    # Fetch data
-    print("Fetching NASA APOD...")
-    apod = get_nasa_apod(api_key)
-    print(f"  Title: {apod['title']}")
-    print(f"  Media: {apod['media_type']}")
-    print(f"  HD URL: {apod['hdurl']}")
-    print(f"  Page: {apod['page_url']}")
+    posts = config["posts"]
 
-    print("Fetching Wikiquote QOTD...")
-    qotd = get_wikiquote_qotd()
-    print(f"  Quote: {qotd['quote'][:80]}...")
-    print(f"  Author: {qotd['author']}")
+    # Fetch and post NASA APOD
+    if posts.get("nasa_apod", True):
+        print("Fetching NASA APOD...")
+        apod = get_nasa_apod(api_key)
+        print(f"  Title: {apod['title']}")
+        print(f"  Media: {apod['media_type']}")
+        print(f"  HD URL: {apod['hdurl']}")
+        print(f"  Page: {apod['page_url']}")
 
-    # Post APOD message
-    print("Posting NASA APOD to Slack...")
-    apod_blocks = build_apod_blocks(apod)
-    apod_ts = post_slack_message(
-        token, channel, apod_blocks,
-        text=f"NASA APOD: {apod['title']}",
-        unfurl=False,
-    )
+        print("Posting NASA APOD to Slack...")
+        apod_blocks = build_apod_blocks(apod)
+        apod_ts = post_slack_message(
+            token, channel, apod_blocks,
+            text=f"NASA APOD: {apod['title']}",
+            unfurl=False,
+        )
 
-    # Post description as a thread reply
-    print("Posting description in thread...")
-    thread_blocks = build_thread_blocks(apod)
-    post_slack_message(
-        token, channel, thread_blocks,
-        text=apod["explanation"],
-        thread_ts=apod_ts,
-        unfurl=False,
-    )
+        # Post description as a thread reply
+        print("Posting description in thread...")
+        thread_blocks = build_thread_blocks(apod)
+        post_slack_message(
+            token, channel, thread_blocks,
+            text=apod["explanation"],
+            thread_ts=apod_ts,
+            unfurl=False,
+        )
 
-    # Post quote as a separate message
-    print("Posting Quote of the Day to Slack...")
-    quote_blocks = build_quote_blocks(qotd)
-    post_slack_message(
-        token, channel, quote_blocks,
-        text=f"Quote of the Day: {qotd['quote']}",
-        unfurl=False,
-    )
+    # Fetch and post Wikiquote QOTD
+    if posts.get("wikiquote_qotd", True):
+        print("Fetching Wikiquote QOTD...")
+        qotd = get_wikiquote_qotd()
+        print(f"  Quote: {qotd['quote'][:80]}...")
+        print(f"  Author: {qotd['author']}")
+
+        print("Posting Quote of the Day to Slack...")
+        quote_blocks = build_quote_blocks(qotd)
+        post_slack_message(
+            token, channel, quote_blocks,
+            text=f"Quote of the Day: {qotd['quote']}",
+            unfurl=False,
+        )
 
     print("Done!")
 

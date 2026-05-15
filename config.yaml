@@ -9,8 +9,8 @@ channel_id: ""
 # Schedule: hour and minute in 24h format, and timezone
 # Timezone must be a valid IANA timezone (e.g. America/New_York, Europe/London, Asia/Tokyo)
 schedule:
-  hour: 9
-  minute: 0
+  hour: 6
+  minute: 30
   timezone: "America/New_York"
 
 # Which posts to include (set to false to disable)

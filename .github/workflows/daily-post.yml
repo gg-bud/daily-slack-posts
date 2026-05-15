@@ -4,7 +4,7 @@ on:
   schedule:
     # Default: 9:00 AM Eastern (13:00 UTC)
     # To change the schedule, update config.yaml and run the "Update Schedule" workflow.
-    - cron: "0 13 * * *"
+    - cron: "30 10 * * *"
   workflow_dispatch: # Allow manual trigger
 
 jobs:

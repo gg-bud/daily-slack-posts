@@ -2,7 +2,7 @@
 Daily Slack Post: NASA APOD + Wikiquote Quote of the Day.
 
 Fetches the NASA Astronomy Picture of the Day and the Wikiquote
-Quote of the Day, then posts them as two separate messages to a
+Quote of the Day, then posts them as a single combined message to a
 Slack channel. The APOD description is posted as a thread reply.
 
 Configuration is loaded from config.yaml in the project root.
@@ -18,6 +18,7 @@ Optional environment variables (override config.yaml):
 import os
 import sys
 import json
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -61,10 +62,26 @@ def load_config() -> dict:
     return defaults
 
 
+def request_with_retries(url: str, timeout: int = 30, retries: int = 3,
+                         backoff: float = 5.0, headers: dict = None) -> requests.Response:
+    """Make a GET request with retry logic for transient failures."""
+    for attempt in range(1, retries + 1):
+        try:
+            response = requests.get(url, headers=headers, timeout=timeout)
+            return response
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            if attempt == retries:
+                raise
+            wait = backoff * attempt
+            print(f"  Request failed (attempt {attempt}/{retries}): {e}")
+            print(f"  Retrying in {wait}s...")
+            time.sleep(wait)
+
+
 def get_nasa_apod(api_key: str) -> dict:
     """Fetch NASA Astronomy Picture of the Day with HD URL and description."""
     url = f"https://api.nasa.gov/planetary/apod?api_key={api_key}"
-    response = requests.get(url, timeout=30)
+    response = request_with_retries(url, timeout=30)
     response.raise_for_status()
     data = response.json()
 
@@ -95,9 +112,13 @@ def get_wikiquote_qotd() -> dict:
         f"?action=parse&page={page}&prop=text&format=json"
     )
     headers = {"User-Agent": WIKIQUOTE_UA}
-    response = requests.get(url, headers=headers, timeout=30)
+    response = request_with_retries(url, timeout=30, headers=headers)
     response.raise_for_status()
-    html = response.json()["parse"]["text"]["*"]
+    api_data = response.json()
+    if "error" in api_data:
+        print(f"  Wikiquote API error: {api_data['error']}")
+        return {"quote": "No quote available today.", "author": "Unknown", "author_link": ""}
+    html = api_data["parse"]["text"]["*"]
 
     soup = BeautifulSoup(html, "html.parser")
 
@@ -180,8 +201,8 @@ def post_slack_message(token: str, channel: str, blocks: list, text: str,
     return data["ts"]
 
 
-def build_apod_blocks(apod: dict) -> list:
-    """Build Slack Block Kit blocks for the NASA APOD message."""
+def build_main_blocks(apod: dict, qotd: dict) -> list:
+    """Build Slack Block Kit blocks for the combined APOD + Quote of the Day post."""
     blocks = [
         {
             "type": "header",
@@ -194,7 +215,6 @@ def build_apod_blocks(apod: dict) -> list:
     ]
 
     if apod["media_type"] == "image":
-        # Use HD URL for higher resolution
         image_url = apod["hdurl"] or apod["url"]
         blocks.append({
             "type": "image",
@@ -210,7 +230,7 @@ def build_apod_blocks(apod: dict) -> list:
             },
         })
 
-    # Title with link to APOD page
+    # APOD title link
     blocks.append({
         "type": "section",
         "text": {
@@ -219,34 +239,30 @@ def build_apod_blocks(apod: dict) -> list:
         },
     })
 
-    return blocks
+    # Divider between APOD and quote
+    blocks.append({"type": "divider"})
 
-
-def build_quote_blocks(qotd: dict) -> list:
-    """Build Slack Block Kit blocks for the Wikiquote message."""
-    # Attribution line with link
+    # Quote of the Day
     if qotd["author_link"]:
         attribution = f"— _<{qotd['author_link']}|{qotd['author']}>_"
     else:
         attribution = f"— _{qotd['author']}_"
 
-    blocks = [
-        {
-            "type": "header",
-            "text": {
-                "type": "plain_text",
-                "text": "Quote of the Day",
-                "emoji": True,
-            },
+    blocks.append({
+        "type": "header",
+        "text": {
+            "type": "plain_text",
+            "text": "Quote of the Day",
+            "emoji": True,
         },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f">{qotd['quote']}\n{attribution}",
-            },
+    })
+    blocks.append({
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": f">{qotd['quote']}\n{attribution}",
         },
-    ]
+    })
 
     return blocks
 
@@ -290,57 +306,69 @@ def main():
 
     posts = config["posts"]
 
-    # Fetch and post NASA APOD
+    errors = []
+
+    apod = None
+    qotd = None
+
+    # Fetch NASA APOD
     if posts.get("nasa_apod", True):
-        print("Fetching NASA APOD...")
-        apod = get_nasa_apod(api_key)
-        print(f"  Title: {apod['title']}")
-        print(f"  Media: {apod['media_type']}")
-        print(f"  HD URL: {apod['hdurl']}")
-        print(f"  Page: {apod['page_url']}")
+        try:
+            print("Fetching NASA APOD...")
+            apod = get_nasa_apod(api_key)
+            print(f"  Title: {apod['title']}")
+            print(f"  Media: {apod['media_type']}")
+            print(f"  HD URL: {apod['hdurl']}")
+            print(f"  Page: {apod['page_url']}")
+        except Exception as e:
+            print(f"ERROR: NASA APOD fetch failed: {e}")
+            errors.append(f"NASA APOD: {e}")
 
-        print("Posting NASA APOD to Slack...")
-        apod_blocks = build_apod_blocks(apod)
-        apod_ts = post_slack_message(
-            token, channel, apod_blocks,
-            text=f"NASA APOD: {apod['title']}",
-            unfurl=False,
-        )
-
-        # Post description as a thread reply
-        print("Posting description in thread...")
-        thread_blocks = build_thread_blocks(apod)
-        post_slack_message(
-            token, channel, thread_blocks,
-            text=apod["explanation"],
-            thread_ts=apod_ts,
-            unfurl=False,
-        )
-
-    # Fetch and post Wikiquote QOTD
+    # Fetch Wikiquote QOTD
     if posts.get("wikiquote_qotd", True):
-        print("Fetching Wikiquote QOTD...")
-        qotd = get_wikiquote_qotd()
-        print(f"  Quote: {qotd['quote'][:80]}...")
-        print(f"  Author: {qotd['author']}")
+        try:
+            print("Fetching Wikiquote QOTD...")
+            qotd = get_wikiquote_qotd()
+            print(f"  Quote: {qotd['quote'][:80]}...")
+            print(f"  Author: {qotd['author']}")
+        except Exception as e:
+            print(f"ERROR: Wikiquote QOTD fetch failed: {e}")
+            errors.append(f"Wikiquote QOTD: {e}")
 
-        print("Posting Quote of the Day to Slack...")
-        quote_blocks = build_quote_blocks(qotd)
-        quote_ts = post_slack_message(
-            token, channel, quote_blocks,
-            text=f"Quote of the Day: {qotd['quote']}",
-            unfurl=False,
-        )
+    # Build and send combined post
+    if apod or qotd:
+        try:
+            # Fall back to empty stubs if one fetch failed
+            apod = apod or {"title": "", "url": "", "hdurl": "", "explanation": "", "media_type": "image", "page_url": ""}
+            qotd = qotd or {"quote": "No quote available today.", "author": "Unknown", "author_link": ""}
 
-        # Post "Discuss." as a thread reply
-        print("Posting discussion prompt in thread...")
-        post_slack_message(
-            token, channel,
-            blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": "Discuss."}}],
-            text="Discuss.",
-            thread_ts=quote_ts,
-            unfurl=False,
-        )
+            print("Posting combined message to Slack...")
+            main_blocks = build_main_blocks(apod, qotd)
+            post_ts = post_slack_message(
+                token, channel, main_blocks,
+                text=f"NASA APOD: {apod['title']}",
+                unfurl=False,
+            )
+
+            # Post APOD description as a thread reply
+            if apod["explanation"]:
+                print("Posting APOD description in thread...")
+                thread_blocks = build_thread_blocks(apod)
+                post_slack_message(
+                    token, channel, thread_blocks,
+                    text=apod["explanation"],
+                    thread_ts=post_ts,
+                    unfurl=False,
+                )
+        except Exception as e:
+            print(f"ERROR: Slack post failed: {e}")
+            errors.append(f"Slack post: {e}")
+
+    if errors:
+        print(f"\nCompleted with {len(errors)} error(s):")
+        for err in errors:
+            print(f"  - {err}")
+        sys.exit(1)
 
     print("Done!")
 

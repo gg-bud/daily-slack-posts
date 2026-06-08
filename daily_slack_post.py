@@ -64,10 +64,16 @@ def load_config() -> dict:
 
 def request_with_retries(url: str, timeout: int = 30, retries: int = 3,
                          backoff: float = 5.0, headers: dict = None) -> requests.Response:
-    """Make a GET request with retry logic for transient failures."""
+    """Make a GET request with retry logic for transient failures (timeouts and 5xx)."""
     for attempt in range(1, retries + 1):
         try:
             response = requests.get(url, headers=headers, timeout=timeout)
+            if response.status_code >= 500 and attempt < retries:
+                wait = backoff * attempt
+                print(f"  Server error {response.status_code} (attempt {attempt}/{retries})")
+                print(f"  Retrying in {wait}s...")
+                time.sleep(wait)
+                continue
             return response
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             if attempt == retries:
@@ -203,44 +209,49 @@ def post_slack_message(token: str, channel: str, blocks: list, text: str,
 
 def build_main_blocks(apod: dict, qotd: dict) -> list:
     """Build Slack Block Kit blocks for the combined APOD + Quote of the Day post."""
-    blocks = [
-        {
+    blocks = []
+    has_apod = bool(apod.get("title"))
+
+    if has_apod:
+        blocks.append({
             "type": "header",
             "text": {
                 "type": "plain_text",
                 "text": "NASA Astronomy Picture of the Day",
                 "emoji": True,
             },
-        },
-    ]
-
-    if apod["media_type"] == "image":
-        image_url = apod["hdurl"] or apod["url"]
-        blocks.append({
-            "type": "image",
-            "image_url": image_url,
-            "alt_text": apod["title"],
-        })
-    elif apod["media_type"] == "video":
-        blocks.append({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f":movie_camera: *<{apod['url']}|{apod['title']}>*",
-            },
         })
 
-    # APOD title link
-    blocks.append({
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": f"*<{apod['page_url']}|{apod['title']}>*",
-        },
-    })
+        if apod["media_type"] == "image":
+            image_url = apod["hdurl"] or apod["url"]
+            if image_url:
+                blocks.append({
+                    "type": "image",
+                    "image_url": image_url,
+                    "alt_text": apod["title"],
+                })
+        elif apod["media_type"] == "video" and apod["url"]:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f":movie_camera: *<{apod['url']}|{apod['title']}>*",
+                },
+            })
 
-    # Divider between APOD and quote
-    blocks.append({"type": "divider"})
+        # APOD title link
+        if apod["page_url"]:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*<{apod['page_url']}|{apod['title']}>*",
+                },
+            })
+
+    # Divider between APOD and quote (only if both exist)
+    if has_apod:
+        blocks.append({"type": "divider"})
 
     # Quote of the Day
     if qotd["author_link"]:

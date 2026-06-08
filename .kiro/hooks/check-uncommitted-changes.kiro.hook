@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Uncommitted Changes Reminder",
+  "description": "After each agent interaction completes, checks for uncommitted or unpushed changes and reminds the user to sync them.",
+  "version": "1",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "git -C \"g:\\My Drive\\Projects\\daily-slack-posts\" status --porcelain && git -C \"g:\\My Drive\\Projects\\daily-slack-posts\" log --oneline @{u}..HEAD 2>nul"
+  }
+}

@@ -1,4 +1,4 @@
-name: Daily Slack Post (Exohard)
+name: Daily Slack Post (Secondary)
 
 on:
   schedule:
@@ -23,7 +23,7 @@ jobs:
 
       - name: Run daily post
         env:
-          SLACK_BOT_TOKEN: ${{ secrets.EXOHARD_SLACK_BOT_TOKEN }}
-          SLACK_CHANNEL_ID: ${{ secrets.EXOHARD_SLACK_CHANNEL_ID }}
+          SLACK_BOT_TOKEN: ${{ secrets.SECONDARY_SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SECONDARY_SLACK_CHANNEL_ID }}
           NASA_API_KEY: ${{ secrets.NASA_API_KEY }}
         run: python daily_slack_post.py

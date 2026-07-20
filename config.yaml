@@ -9,7 +9,7 @@ channel_id: ""
 # Schedule: hour and minute in 24h format, and timezone
 # Timezone must be a valid IANA timezone (e.g. America/New_York, Europe/London, Asia/Tokyo)
 schedule:
-  hour: 6
+  hour: 8
   minute: 30
   timezone: "America/New_York"
 

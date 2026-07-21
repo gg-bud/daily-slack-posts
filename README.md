@@ -37,10 +37,21 @@ pip install -r requirements.txt
 python daily_slack_post.py
 ```
 
-## Secrets
+## Workflows and Secrets
+
+This repo runs two independent daily post workflows, each posting to a different Slack workspace. Each workflow has its own set of secrets — if you rename a workflow file, update the secret names it references too, and keep this table in sync.
+
+| Workflow file | Slack workspace | Required secrets |
+|---|---|---|
+| `daily-post.yml` | Massachoderkansas (primary) | `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID`, `NASA_API_KEY` |
+| `daily-post-secondary.yml` | ExoHard | `SECONDARY_SLACK_BOT_TOKEN`, `SECONDARY_SLACK_CHANNEL_ID`, `NASA_API_KEY` |
+
+Both workflows share the same `NASA_API_KEY`.
 
 | Secret | Description |
 |--------|-------------|
-| `SLACK_BOT_TOKEN` | Bot User OAuth Token (`xoxb-...`) |
-| `SLACK_CHANNEL_ID` | Channel ID to post to |
+| `SLACK_BOT_TOKEN` / `SECONDARY_SLACK_BOT_TOKEN` | Bot User OAuth Token (`xoxb-...`) |
+| `SLACK_CHANNEL_ID` / `SECONDARY_SLACK_CHANNEL_ID` | Channel ID to post to |
 | `NASA_API_KEY` | NASA API key (get free at api.nasa.gov) |
+
+Each workflow includes a "Verify required secrets" step that runs before the script and fails fast with a clear error naming the missing secret and which workflow needs it, instead of letting the Python script fail with a generic message.

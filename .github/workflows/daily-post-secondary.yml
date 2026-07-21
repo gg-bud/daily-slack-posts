@@ -21,6 +21,24 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Verify required secrets
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SECONDARY_SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SECONDARY_SLACK_CHANNEL_ID }}
+          NASA_API_KEY: ${{ secrets.NASA_API_KEY }}
+        run: |
+          missing=0
+          for name in SLACK_BOT_TOKEN SLACK_CHANNEL_ID NASA_API_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required secret for workflow 'Daily Slack Post (Secondary)'. Check SECONDARY_SLACK_BOT_TOKEN, SECONDARY_SLACK_CHANNEL_ID, and NASA_API_KEY at Settings > Secrets and variables > Actions."
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            exit 1
+          fi
+          echo "All required secrets are present."
+
       - name: Run daily post
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SECONDARY_SLACK_BOT_TOKEN }}

@@ -207,6 +207,16 @@ def post_slack_message(token: str, channel: str, blocks: list, text: str,
     return data["ts"]
 
 
+def is_image_url_accessible(url: str) -> bool:
+    """Check if an image URL can be fetched by an external service (like Slack)."""
+    try:
+        # Use a neutral user-agent to simulate what Slack's image fetcher would do
+        resp = requests.head(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
 def build_main_blocks(apod: dict, qotd: dict) -> list:
     """Build Slack Block Kit blocks for the combined APOD + Quote of the Day post."""
     blocks = []
@@ -224,11 +234,20 @@ def build_main_blocks(apod: dict, qotd: dict) -> list:
 
         if apod["media_type"] == "image":
             image_url = apod["hdurl"] or apod["url"]
-            if image_url:
+            if image_url and is_image_url_accessible(image_url):
                 blocks.append({
                     "type": "image",
                     "image_url": image_url,
                     "alt_text": apod["title"],
+                })
+            elif image_url and apod["page_url"]:
+                # Image not fetchable — link to the APOD page instead
+                blocks.append({
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f":telescope: *<{apod['page_url']}|View today's image: {apod['title']}>*",
+                    },
                 })
         elif apod["media_type"] == "video" and apod["url"]:
             blocks.append({

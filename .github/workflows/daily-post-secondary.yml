@@ -1,9 +1,10 @@
 name: Daily Slack Post (Secondary)
 
 on:
-  schedule:
-    # 8:30 AM Eastern = 12:30 UTC
-    - cron: "30 12 * * *"
+  # Schedule disabled — Exohard posts turned off
+  # schedule:
+  #   # 8:30 AM Eastern = 12:30 UTC
+  #   - cron: "30 12 * * *"
   workflow_dispatch: # Allow manual trigger
 
 jobs:

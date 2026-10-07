@@ -16,4 +16,4 @@ schedule:
 # Which posts to include (set to false to disable)
 posts:
   nasa_apod: true
-  wikiquote_qotd: true
+  wikiquote_qotd: false

@@ -220,7 +220,8 @@ def is_image_url_accessible(url: str) -> bool:
 def build_main_blocks(apod: dict, qotd: dict) -> list:
     """Build Slack Block Kit blocks for the combined APOD + Quote of the Day post."""
     blocks = []
-    has_apod = bool(apod.get("title"))
+    has_apod = bool(apod and apod.get("title"))
+    has_qotd = bool(qotd)
 
     if has_apod:
         blocks.append({
@@ -269,30 +270,31 @@ def build_main_blocks(apod: dict, qotd: dict) -> list:
             })
 
     # Divider between APOD and quote (only if both exist)
-    if has_apod:
+    if has_apod and has_qotd:
         blocks.append({"type": "divider"})
 
     # Quote of the Day
-    if qotd["author_link"]:
-        attribution = f"— _<{qotd['author_link']}|{qotd['author']}>_"
-    else:
-        attribution = f"— _{qotd['author']}_"
+    if has_qotd:
+        if qotd["author_link"]:
+            attribution = f"— _<{qotd['author_link']}|{qotd['author']}>_"
+        else:
+            attribution = f"— _{qotd['author']}_"
 
-    blocks.append({
-        "type": "header",
-        "text": {
-            "type": "plain_text",
-            "text": "Quote of the Day",
-            "emoji": True,
-        },
-    })
-    blocks.append({
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": f">{qotd['quote']}\n{attribution}",
-        },
-    })
+        blocks.append({
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "Quote of the Day",
+                "emoji": True,
+            },
+        })
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f">{qotd['quote']}\n{attribution}",
+            },
+        })
 
     return blocks
 
@@ -335,6 +337,12 @@ def main():
         sys.exit(1)
 
     posts = config["posts"]
+
+    # Per-workflow overrides via environment variables
+    if os.environ.get("DISABLE_WIKIQUOTE", "").lower() in ("1", "true", "yes"):
+        posts["wikiquote_qotd"] = False
+    if os.environ.get("DISABLE_NASA_APOD", "").lower() in ("1", "true", "yes"):
+        posts["nasa_apod"] = False
 
     errors = []
 

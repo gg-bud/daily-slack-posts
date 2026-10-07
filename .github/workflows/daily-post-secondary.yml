@@ -1,10 +1,9 @@
 name: Daily Slack Post (Secondary)
 
 on:
-  # Schedule disabled — Exohard posts turned off
-  # schedule:
-  #   # 8:30 AM Eastern = 12:30 UTC
-  #   - cron: "30 12 * * *"
+  schedule:
+    # 8:30 AM Eastern = 12:30 UTC
+    - cron: "30 12 * * *"
   workflow_dispatch: # Allow manual trigger
 
 jobs:
@@ -45,4 +44,5 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SECONDARY_SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SECONDARY_SLACK_CHANNEL_ID }}
           NASA_API_KEY: ${{ secrets.NASA_API_KEY }}
+          DISABLE_WIKIQUOTE: "true"
         run: python daily_slack_post.py

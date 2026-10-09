@@ -107,11 +107,13 @@ def get_nasa_apod(api_key: str) -> dict:
 
 
 def get_wikiquote_qotd() -> dict:
-    """Fetch today's Quote of the Day from Wikiquote monthly page."""
+    """Fetch today's Quote of the Day from the Wikiquote individual daily page."""
     today = date.today()
     month_name = today.strftime("%B")
     day = today.day
-    page = f"Wikiquote:Quote_of_the_day/{month_name}_{today.year}"
+    # Individual daily page (e.g. "Wikiquote:Quote_of_the_day/October_7,_2026") is
+    # simpler to parse than the monthly page and is confirmed to exist before each day.
+    page = f"Wikiquote:Quote_of_the_day/{month_name}_{day},_{today.year}"
 
     url = (
         f"https://en.wikiquote.org/w/api.php"
@@ -128,45 +130,34 @@ def get_wikiquote_qotd() -> dict:
 
     soup = BeautifulSoup(html, "html.parser")
 
-    # Find the dt element for today's date
-    dts = soup.find_all("dt")
-    target_dt = None
-    for dt in dts:
-        if dt.get_text(strip=True) == f"{month_name} {day}":
-            target_dt = dt
-            break
-
     quote_text = ""
     author = ""
     author_link = ""
 
-    if target_dt:
-        # The quote table follows the dl containing the dt
-        dl = target_dt.parent
-        table = dl.find_next_sibling("table")
-        if table:
-            # Quote is in the cquote table, middle td
-            cquote = table.find("table", class_="cquote")
-            if cquote:
-                tds = cquote.find_all("td")
-                if len(tds) >= 2:
-                    quote_text = tds[1].get_text(separator=" ", strip=True)
+    # The daily page renders a single cquote table — no dt scanning needed
+    cquote = soup.find("table", class_="cquote")
+    if cquote:
+        tds = cquote.find_all("td")
+        if len(tds) >= 2:
+            quote_text = tds[1].get_text(separator=" ", strip=True)
 
-            # Author is in the last row of the outer table
-            rows = table.find_all("tr")
-            if rows:
-                author_row = rows[-1]
-                links = author_row.find_all("a")
-                for link in links:
-                    href = link.get("href", "")
-                    text = link.get_text(strip=True)
-                    if text and "/wiki/" in href and ":" not in href:
-                        author = text
-                        author_link = f"https://en.wikiquote.org{href}"
-                        break
+        # Author attribution is in the last row of the cquote table
+        rows = cquote.find_all("tr")
+        if rows:
+            author_row = rows[-1]
+            links = author_row.find_all("a")
+            for link in links:
+                href = link.get("href", "")
+                text = link.get_text(strip=True)
+                if text and "/wiki/" in href and ":" not in href:
+                    author = text
+                    author_link = f"https://en.wikiquote.org{href}"
+                    break
 
-    # Fallback if parsing failed
+    # Fallback if parsing failed — log details to help diagnose future failures
     if not quote_text:
+        print(f"  WARNING: No quote text parsed from HTML. "
+              f"cquote found={cquote is not None}")
         quote_text = "No quote available today."
     if not author:
         author = "Unknown"
@@ -207,16 +198,6 @@ def post_slack_message(token: str, channel: str, blocks: list, text: str,
     return data["ts"]
 
 
-def is_image_url_accessible(url: str) -> bool:
-    """Check if an image URL can be fetched by an external service (like Slack)."""
-    try:
-        # Use a neutral user-agent to simulate what Slack's image fetcher would do
-        resp = requests.head(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        return resp.status_code == 200
-    except Exception:
-        return False
-
-
 def build_main_blocks(apod: dict, qotd: dict) -> list:
     """Build Slack Block Kit blocks for the combined APOD + Quote of the Day post."""
     blocks = []
@@ -235,20 +216,11 @@ def build_main_blocks(apod: dict, qotd: dict) -> list:
 
         if apod["media_type"] == "image":
             image_url = apod["hdurl"] or apod["url"]
-            if image_url and is_image_url_accessible(image_url):
+            if image_url:
                 blocks.append({
                     "type": "image",
                     "image_url": image_url,
                     "alt_text": apod["title"],
-                })
-            elif image_url and apod["page_url"]:
-                # Image not fetchable — link to the APOD page instead
-                blocks.append({
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f":telescope: *<{apod['page_url']}|View today's image: {apod['title']}>*",
-                    },
                 })
         elif apod["media_type"] == "video" and apod["url"]:
             blocks.append({

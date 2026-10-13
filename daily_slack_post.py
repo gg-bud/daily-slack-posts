@@ -84,24 +84,152 @@ def request_with_retries(url: str, timeout: int = 30, retries: int = 3,
             time.sleep(wait)
 
 
-def get_nasa_apod(api_key: str) -> dict:
-    """Fetch NASA Astronomy Picture of the Day with HD URL and description."""
-    url = f"https://api.nasa.gov/planetary/apod?api_key={api_key}"
-    response = request_with_retries(url, timeout=30)
-    response.raise_for_status()
-    data = response.json()
+SCIENCE_NASA_WP_API = "https://science.nasa.gov/wp-json/wp/v2"
+# URLs containing this string are the NASA logo placeholder, not a real APOD image
+NASA_LOGO_MARKER = "nasa-logo"
 
-    # Build the APOD website link (format: apYYMMDD.html)
-    apod_date = data.get("date", str(date.today()))
+
+def _is_bad_apod_url(url: str) -> bool:
+    """Return True if the URL looks like the NASA logo placeholder rather than an image."""
+    return not url or NASA_LOGO_MARKER in url
+
+
+def get_nasa_apod_from_science() -> dict | None:
+    """
+    Fallback: fetch today's APOD image from the science.nasa.gov WordPress REST API.
+
+    Returns an APOD dict (same shape as get_nasa_apod) if today's post is found,
+    or None if the post isn't available yet or the request fails.
+    """
+    today_str = str(date.today())  # YYYY-MM-DD
+
+    # Step 1: get the most recent image-article post
+    list_url = (
+        f"{SCIENCE_NASA_WP_API}/image-article"
+        f"?per_page=1&orderby=date&order=desc"
+        f"&_fields=id,date,slug,title,link,featured_media"
+    )
+    try:
+        resp = request_with_retries(list_url, timeout=20)
+        resp.raise_for_status()
+        posts = resp.json()
+    except Exception as e:
+        print(f"  science.nasa.gov post list failed: {e}")
+        return None
+
+    if not posts:
+        print("  science.nasa.gov returned no image-article posts.")
+        return None
+
+    post = posts[0]
+
+    # Verify the post is for today (date field is local midnight UTC)
+    post_date = post.get("date", "")[:10]  # "YYYY-MM-DD"
+    if post_date != today_str:
+        print(f"  science.nasa.gov latest post is {post_date}, not today ({today_str}). Skipping.")
+        return None
+
+    media_id = post.get("featured_media")
+    page_url = post.get("link", "https://science.nasa.gov/apod/")
+    title = post.get("title", {}).get("rendered", "NASA APOD")
+    # Strip HTML entities like &#8211;
+    import html as html_module
+    title = html_module.unescape(title)
+    # Trim the "APOD: YYYY Month DD – " prefix if present
+    if title.startswith("APOD:"):
+        parts = title.split("–", 1)
+        if len(parts) == 2:
+            title = parts[1].strip()
+
+    if not media_id:
+        print("  science.nasa.gov post has no featured_media.")
+        return None
+
+    # Step 2: fetch the media item to get the actual image URL
+    media_url = (
+        f"{SCIENCE_NASA_WP_API}/media/{media_id}"
+        f"?_fields=source_url,alt_text,title"
+    )
+    try:
+        resp = request_with_retries(media_url, timeout=20)
+        resp.raise_for_status()
+        media = resp.json()
+    except Exception as e:
+        print(f"  science.nasa.gov media fetch failed: {e}")
+        return None
+
+    image_url = media.get("source_url", "")
+    if not image_url or _is_bad_apod_url(image_url):
+        print(f"  science.nasa.gov media URL looks invalid: {image_url}")
+        return None
+
+    print(f"  Scraped image URL: {image_url}")
+    print(f"  Scraped page URL: {page_url}")
+
+    return {
+        "title": title,
+        "url": image_url,
+        "hdurl": image_url,
+        "explanation": "",  # explanation still comes from the NASA API when available
+        "media_type": "image",
+        "page_url": page_url,
+    }
+
+
+def get_nasa_apod(api_key: str) -> dict:
+    """
+    Fetch NASA Astronomy Picture of the Day.
+
+    Tries the official NASA API first. If it returns a 5xx error or serves a
+    placeholder logo URL instead of a real image, falls back to scraping
+    the science.nasa.gov WordPress REST API for the image URL.
+    """
+    api_data = None
+    api_error = None
+
+    url = f"https://api.nasa.gov/planetary/apod?api_key={api_key}"
+    try:
+        response = request_with_retries(url, timeout=30)
+        response.raise_for_status()
+        api_data = response.json()
+    except Exception as e:
+        api_error = e
+        print(f"  NASA API request failed: {e}")
+
+    # Detect a bad API response: either failed outright, or returned the logo placeholder
+    api_image_url = (api_data or {}).get("hdurl") or (api_data or {}).get("url", "")
+    api_is_bad = api_data is None or _is_bad_apod_url(api_image_url)
+
+    if api_is_bad:
+        source = "API error" if api_data is None else f"placeholder URL ({api_image_url[:60]})"
+        print(f"  NASA API unusable ({source}). Trying science.nasa.gov fallback...")
+        scraped = get_nasa_apod_from_science()
+        if scraped:
+            # Prefer the API explanation text if we got it despite a bad image URL
+            if api_data and api_data.get("explanation"):
+                scraped["explanation"] = api_data["explanation"]
+            return scraped
+        elif api_data is None:
+            # Both failed — re-raise the original error so the caller can log it
+            raise api_error or RuntimeError("NASA APOD unavailable from all sources")
+        else:
+            # API returned garbage data and scrape also failed; raise to signal failure
+            raise RuntimeError(
+                f"NASA APOD API returned placeholder image and scrape fallback failed. "
+                f"API URL was: {api_image_url}"
+            )
+
+    # API returned good data
+    apod_date = api_data.get("date", str(date.today()))
     dt = datetime.strptime(apod_date, "%Y-%m-%d")
     apod_page_url = f"https://apod.nasa.gov/apod/ap{dt.strftime('%y%m%d')}.html"
 
     return {
-        "title": data.get("title", "NASA APOD"),
-        "url": data.get("url", ""),
-        "hdurl": data.get("hdurl", data.get("url", "")),
-        "explanation": data.get("explanation", ""),
-        "media_type": data.get("media_type", "image"),
+        "title": api_data.get("title", "NASA APOD"),
+        "url": api_data.get("url", ""),
+        "hdurl": api_data.get("hdurl", api_data.get("url", "")),
+        "explanation": api_data.get("explanation", ""),
+        "media_type": api_data.get("media_type", "image"),
         "page_url": apod_page_url,
     }
 
@@ -331,7 +459,8 @@ def main():
             print(f"  HD URL: {apod['hdurl']}")
             print(f"  Page: {apod['page_url']}")
         except Exception as e:
-            print(f"ERROR: NASA APOD fetch failed: {e}")
+            print(f"WARNING: NASA APOD fetch failed: {e}")
+            print("  Continuing without APOD — will post QotD only if available.")
             errors.append(f"NASA APOD: {e}")
 
     # Fetch Wikiquote QOTD
@@ -346,6 +475,7 @@ def main():
             errors.append(f"Wikiquote QOTD: {e}")
 
     # Build and send combined post
+    slack_posted = False
     if apod or qotd:
         try:
             # Fall back to empty stubs if one fetch failed
@@ -359,6 +489,7 @@ def main():
                 text=f"NASA APOD: {apod['title']}",
                 unfurl=False,
             )
+            slack_posted = True
 
             # Post APOD description as a thread reply
             if apod["explanation"]:
@@ -374,8 +505,19 @@ def main():
             print(f"ERROR: Slack post failed: {e}")
             errors.append(f"Slack post: {e}")
 
-    if errors:
-        print(f"\nCompleted with {len(errors)} error(s):")
+    # Summarise outcome.
+    # Treat a NASA-only failure as a warning (exit 0) if the Slack post went out.
+    # Only exit 1 if the Slack post itself failed or nothing was posted at all.
+    slack_errors = [e for e in errors if e.startswith("Slack post")]
+    non_slack_errors = [e for e in errors if not e.startswith("Slack post")]
+
+    if non_slack_errors and not slack_errors:
+        print(f"\nPosted successfully with {len(non_slack_errors)} warning(s):")
+        for err in non_slack_errors:
+            print(f"  - {err}")
+
+    if slack_errors or (not slack_posted and not apod and not qotd):
+        print(f"\nFailed with {len(errors)} error(s):")
         for err in errors:
             print(f"  - {err}")
         sys.exit(1)

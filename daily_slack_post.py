@@ -103,10 +103,14 @@ def get_nasa_apod_from_science() -> dict | None:
     """
     today_str = str(date.today())  # YYYY-MM-DD
 
-    # Step 1: get the most recent image-article post
+    # Step 1: search for this month's APOD posts.
+    # Note: orderby=date returns [] for this custom post type — use search instead.
+    today_obj = date.fromisoformat(today_str)
+    month_lower = today_obj.strftime("%B").lower()  # e.g. "october"
+    search_term = f"apod-{today_obj.year}-{month_lower}"
     list_url = (
         f"{SCIENCE_NASA_WP_API}/image-article"
-        f"?per_page=1&orderby=date&order=desc"
+        f"?per_page=5&search={search_term}"
         f"&_fields=id,date,slug,title,link,featured_media"
     )
     try:
@@ -118,15 +122,20 @@ def get_nasa_apod_from_science() -> dict | None:
         return None
 
     if not posts:
-        print("  science.nasa.gov returned no image-article posts.")
+        print(f"  science.nasa.gov returned no image-article posts for search '{search_term}'.")
         return None
 
-    post = posts[0]
+    # Find the post for today specifically (results may include multiple days)
+    post = None
+    for candidate in posts:
+        post_date = candidate.get("date", "")[:10]  # "YYYY-MM-DD"
+        if post_date == today_str:
+            post = candidate
+            break
 
-    # Verify the post is for today (date field is local midnight UTC)
-    post_date = post.get("date", "")[:10]  # "YYYY-MM-DD"
-    if post_date != today_str:
-        print(f"  science.nasa.gov latest post is {post_date}, not today ({today_str}). Skipping.")
+    if post is None:
+        latest_date = posts[0].get("date", "")[:10] if posts else "none"
+        print(f"  science.nasa.gov has no post for today ({today_str}). Latest is {latest_date}.")
         return None
 
     media_id = post.get("featured_media")
@@ -511,16 +520,15 @@ def main():
     slack_errors = [e for e in errors if e.startswith("Slack post")]
     non_slack_errors = [e for e in errors if not e.startswith("Slack post")]
 
-    if non_slack_errors and not slack_errors:
-        print(f"\nPosted successfully with {len(non_slack_errors)} warning(s):")
-        for err in non_slack_errors:
-            print(f"  - {err}")
-
-    if slack_errors or (not slack_posted and not apod and not qotd):
+    if slack_errors or not slack_posted:
         print(f"\nFailed with {len(errors)} error(s):")
         for err in errors:
             print(f"  - {err}")
         sys.exit(1)
+    elif non_slack_errors:
+        print(f"\nPosted successfully with {len(non_slack_errors)} warning(s):")
+        for err in non_slack_errors:
+            print(f"  - {err}")
 
     print("Done!")
 

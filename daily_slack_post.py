@@ -368,8 +368,24 @@ def build_main_blocks(apod: dict, qotd: dict) -> list:
                 },
             })
 
-        # APOD title link
-        if apod["page_url"]:
+        # APOD description + title link
+        if apod["explanation"] and apod["page_url"]:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"{apod['explanation']}\n\n*<{apod['page_url']}|{apod['title']}>*",
+                },
+            })
+        elif apod["explanation"]:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": apod["explanation"],
+                },
+            })
+        elif apod["page_url"]:
             blocks.append({
                 "type": "section",
                 "text": {
@@ -405,27 +421,6 @@ def build_main_blocks(apod: dict, qotd: dict) -> list:
             },
         })
 
-    return blocks
-
-
-def build_thread_blocks(apod: dict) -> list:
-    """Build blocks for the thread reply with the APOD description and links."""
-    blocks = [
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": apod["explanation"],
-            },
-        },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*<{apod['page_url']}|{apod['title']}>*",
-            },
-        },
-    ]
     return blocks
 
 
@@ -502,17 +497,6 @@ def main():
                 unfurl=False,
             )
             slack_posted = True
-
-            # Post APOD description as a thread reply
-            if apod["explanation"]:
-                print("Posting APOD description in thread...")
-                thread_blocks = build_thread_blocks(apod)
-                post_slack_message(
-                    token, channel, thread_blocks,
-                    text=apod["explanation"],
-                    thread_ts=post_ts,
-                    unfurl=False,
-                )
         except Exception as e:
             print(f"ERROR: Slack post failed: {e}")
             errors.append(f"Slack post: {e}")

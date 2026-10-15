@@ -487,9 +487,12 @@ def main():
     slack_posted = False
     if apod or qotd:
         try:
-            # Fall back to empty stubs if one fetch failed
-            apod = apod or {"title": "", "url": "", "hdurl": "", "explanation": "", "media_type": "image", "page_url": ""}
-            qotd = qotd or {"quote": "No quote available today.", "author": "Unknown", "author_link": ""}
+            # Only stub out apod/qotd if the fetch was attempted (i.e. enabled) but failed.
+            # If a post type is disabled, leave it as None so build_main_blocks omits it.
+            if posts.get("nasa_apod", True) and apod is None:
+                apod = {"title": "", "url": "", "hdurl": "", "explanation": "", "media_type": "image", "page_url": ""}
+            if posts.get("wikiquote_qotd", True) and qotd is None:
+                qotd = {"quote": "No quote available today.", "author": "Unknown", "author_link": ""}
 
             print("Posting combined message to Slack...")
             main_blocks = build_main_blocks(apod, qotd)
